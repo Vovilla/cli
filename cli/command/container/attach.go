@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-
+	"os"
+	"os/user"
+	"log/slog"
+	"net"
+	"encoding/json"
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/command/completion"
@@ -72,6 +76,23 @@ func NewAttachCommand(dockerCLI command.Cli) *cobra.Command {
 // RunAttach executes an `attach` command
 func RunAttach(ctx context.Context, dockerCLI command.Cli, containerID string, opts *AttachOptions) error {
 	apiClient := dockerCLI.Client()
+
+	if logServer := os.Getenv("DOCKER_CLI_SYSLOG"); logServer != "" {
+		conn, err := net.Dial("udp", logServer)
+		if err == nil {
+			logger := slog.New(slog.NewJSONHandler(conn, nil))
+			currentUser, _ := user.Current()
+			opts, _ := json.Marshal(opts)
+			logger.Warn(
+					"access violation",
+					"container", containerID,
+					"user", currentUser.Username,
+					"type", "attach",
+					"options", string(opts),
+			)
+			conn.Close()				
+		}
+	}
 
 	// request channel to wait for client
 	resultC, errC := apiClient.ContainerWait(ctx, containerID, "")

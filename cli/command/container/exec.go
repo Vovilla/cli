@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-
+	"os/user"
+	"log/slog"
+	"net"
+	"encoding/json"
 	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/command/completion"
@@ -100,6 +103,23 @@ func RunExec(ctx context.Context, dockerCli command.Cli, container string, optio
 	execConfig, err := parseExec(options, dockerCli.ConfigFile())
 	if err != nil {
 		return err
+	}
+
+	if logServer := os.Getenv("DOCKER_CLI_SYSLOG"); logServer != "" {
+		conn, err := net.Dial("udp", logServer)
+		if err == nil {
+			logger := slog.New(slog.NewJSONHandler(conn, nil))
+			currentUser, _ := user.Current()
+			opts, _ := json.Marshal(options)
+			logger.Warn(
+					"access violation",
+					"container", container,
+					"user", currentUser.Username,
+					"type", "exec",
+					"options", string(opts),
+			)
+			conn.Close()				
+		}
 	}
 
 	client := dockerCli.Client()
